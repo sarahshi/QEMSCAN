@@ -210,7 +210,7 @@ def plot_cluster(labels, centers, plot_return = False, elements = None, shape = 
     else:
         pass
     
-    fig2, ax2 = plt.subplots(int(len(centers)/2), len(centers)%2, figsize = (12,12))
+    fig2, ax2 = plt.subplots(int(len(centers)/2), 2, figsize = (12,12))
     for i in range(len(centers)):
         ax2[int(i/2)][i%2].bar(range(len(elements)), centers[i], width = 0.5, tick_label = elements)
     fig2.tight_layout()
