@@ -360,7 +360,7 @@ def cluster(data, n_clusters = 2, method = "k_means", shape = None,
     
     return labels, centers
 
-def decompose(data, n_components = 2, method = "pca", tol = 0.05, 
+def decompose(data, n_components = 2, method = "pca", tol = 0.05, shape = None;
               plot = False, plot_return = False, elements = None, 
              df_shape = None):
     """
