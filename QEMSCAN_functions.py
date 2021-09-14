@@ -67,8 +67,8 @@ def build_conc_map(data, shape=None):
         raise ValueError("Data is not pandas dataframe.")
     
     if shape == None:
-        x_max = data['X'].max()
-        y_max = data['Y'].max()
+        x_max = data['X'].max() + 1
+        y_max = data['Y'].max() + 1
         n_features = len(data.columns) - 2 #need to substract x,y
         shape = [x_max, y_max, n_features]
     else:
@@ -332,7 +332,7 @@ def cluster(data, n_clusters = 2, method = "k_means", shape = None,
         labels = kmeans.labels_.reshape(shape[1],shape[0]).copy()
         labels = labels.transpose()
         centers = kmeans.cluster_centers_.copy()
-        del array, orig_shape, kmeans
+        del array, shape, kmeans
         
     elif method.lower() == "gmm":
         from sklearn.mixture import GaussianMixture
@@ -341,7 +341,7 @@ def cluster(data, n_clusters = 2, method = "k_means", shape = None,
         labels = gmm.fit_predict(array).reshape(shape[1],shape[0]).copy()
         labels = labels.transpose()
         centers = gmm.means_.copy()
-        del array, orig_shape, gmm
+        del array, shape, gmm
         
     else:
         raise ValueError("Method " + str(method) + " is not recognised.")
@@ -414,7 +414,7 @@ def decompose(data, n_components = 2, method = "pca", tol = 0.05,
         scores = reshape_2d_to_3d(pca.fit_transform(array), [shape[0], shape[1], n_components])[0].copy()
         components = pca.components_.copy()
         
-        del array, orig_shape, pca
+        del array, shape, pca
         
     elif method.lower() == "nmf":
         #perform NMF decomposition
@@ -422,7 +422,7 @@ def decompose(data, n_components = 2, method = "pca", tol = 0.05,
         scores = reshape_2d_to_3d(nmf.fit_transform(array), [shape[0], shape[1], n_components])[0].copy()
         components = nmf.components_.copy()
         
-        del array, orig_shape, nmf
+        del array, shape, nmf
         
     else:
         raise ValueError("Method " + str(method) + " is not recognised.")
