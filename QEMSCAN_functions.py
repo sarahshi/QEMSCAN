@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Fri Sep 10 20:25:47 2021
-
 @author: norbert
 """
 
@@ -10,8 +8,241 @@ import numpy as np
 import pandas as pd
 import time
 import matplotlib.pyplot as plt
+import matplotlib.backends.backend_pdf
+import matplotlib.patches as mpatches
+import skimage.morphology as morph
+import skimage.measure as measure
+import skimage.filters as filters
 
-def get_masks(label_array, values = None):
+
+def list2stack(array_list):
+    """
+    Function to stack lists of 2D numpy arrays to a 3D stack.
+
+    Parameters
+    ----------
+    array_list : list of 2D ndarray
+        list of 2D ndarray objects to stack into 3D ndarray
+
+    Returns
+    -------
+    stack : 3D ndarray
+        Stacked ndarray object.
+
+    """
+    
+    if isinstance(array_list, list) == False:
+        raise ValueError("Object passed must be a list.")
+    elif len(array_list[0].shape) != 2:
+        raise ValueError("List object must contain 2D arrays.")
+    else:
+        pass
+
+    stack = np.empty((array_list[0].shape[0], array_list[0].shape[1], len(array_list)))
+    
+    for i in range(len(array_list)):
+        stack[:,:,i] = array_list[i]
+        
+    if len(array_list) == 1:
+        stack = stack[:,:,0]
+    else:
+        pass
+    
+    return stack
+
+
+def stack2list(stack):
+    """
+    Opposite/reverse of list2stack function.
+
+    Parameters
+    ----------
+    stack : 3D ndarray
+        stacked array of 2D maps to be broken up into list of 2D ndarray.
+
+    Returns
+    -------
+    array_list : list of 2D ndarray
+        broken up list of 2D ndarray maps.
+
+    """
+    
+    if len(stack.shape) != 3:
+        raise ValueError("Stack object passed must be 3D numpy array.")
+    else:
+        pass    
+    
+    array_list = [stack[:,:,i] for i in range(stack.shape[2])]
+    
+    return array_list
+
+def gauss_check(item):
+    """
+    Checks input parameters of Gaussian filter function for appropriate
+    types. Allows for the handling of multipl types of parameters eg. lists
+    and ndarray objects both.
+
+    Parameters
+    ----------
+    item : ndarray or list of ndarrays
+        Original input parameter to be checked.
+        
+    Returns
+    -------
+    item_list : list of 2D ndarray objects
+        list of 2D ndarray objects to be used for gaussian filter separately.
+
+    """
+    
+    if isinstance(item, list) == True:
+        item_list = item
+    elif isinstance(item, np.ndarray) == True:
+        if len(item.shape) == 3:
+            item_list = stack2list(item)
+        elif len(item.shape) == 2:
+            item_list = [item]
+        else:
+            raise ValueError("Stack object passed must be 2D or 3D numpy array.")
+    else:
+        raise ValueError("Concentration map passed must be a list or 2/3D numpy array.")
+        
+    return item_list
+    
+    
+def gaussian_filter(conc, mask, std = 5, list_return = False):
+    """
+    Wrapper for the skimage implementation of the Gaussian filter function. 
+    This implementation takes into account the different phases present and limits
+    the smoothing to each phase only - avoiding the creation of artifical 'mixels'
+    upon smoothing. Useful for noisy datasets, but beware of drawbacks/limitations.
+
+    Parameters
+    ----------
+    conc : 2/3D ndarray or list of 2D ndarray
+        Concentration map(s) to smoothe.
+    mask : binary mask 2/3D ndarray or list of 2D ndarrays.
+        Binary mask showing the positions of the phases present in the dataset.
+    std : int, optional
+        Standard deviation of Gaussian kernel used for smoothing. The default
+        is 5.
+    list_return : bool, optional
+        If True, filtered maps are returned as a list. The default is False so
+        result is returned as a 3D stack of ndarray.
+
+    Returns
+    -------
+    filtered_maps: 3D ndarray stack or list of 2D ndarray
+        Result of the smoothing operations.
+
+    """
+    
+    
+    conc_list = gauss_check(np.nan_to_num(conc))
+    mask_list = gauss_check(np.nan_to_num(mask))
+    
+    len_check = len(conc_list) == len(mask_list)
+    if len_check == False:
+        raise ValueError("Input parameters do not match in dimension.")
+    else:
+        pass
+    
+    filtered_maps = []
+    
+    for i in range(len(conc_list)):
+        gauss_conc = filters.gaussian(np.multiply(conc_list[i], mask_list[i]), std, truncate = 10)
+        gauss_mask = filters.gaussian(mask_list[i], std, truncate = 10)
+        
+        gauss_conc = gauss_conc[mask_list[i].astype('bool')]
+        gauss_mask = gauss_mask[mask_list[i].astype('bool')]
+        corrected = gauss_conc / gauss_mask
+                
+        filtered_maps.append(get_img(corrected, mask_list[i]))
+        
+    if list_return == True:
+        return filtered_maps
+    else:
+        return list2stack(filtered_maps)
+
+
+def feature_normalisation(feature, return_params = False, mean_norm = True):
+    """
+    Function to perform mean normalisation on the dataset passed to it.
+    
+    Input
+    ----------
+    feature (numpy array) - features to be normalised
+    return_params (boolean, optional) - set True if parameters used for mean normalisation
+                            are to be returned for each feature
+                            
+    Returns
+    ----------
+    norm (numpy array) - mean normalised features
+    params (list of numpy arrays) - only returned if set to True above; list of parameters
+                            used for the mean normalisation as derived from the features
+                            (ie. mean, min and max).
+    
+    """
+    
+    
+    params = []
+    
+    norm = np.zeros_like(feature)
+    
+    if len(feature.shape) == 2:
+        for i in range(feature.shape[1]):
+            if mean_norm == True:
+                temp_mean = feature[:,i].mean()
+            elif mean_norm == False:
+                temp_mean = 0
+            else:
+                raise ValueError("Mean_norm must be boolean")
+            norm[:,i] = (feature[:,i] - temp_mean) / (feature[:,i].max() - feature[:,i].min())
+            params.append(np.asarray([temp_mean,feature[:,i].min(),feature[:,i].max()]))
+    
+    elif len(feature.shape) == 1:
+        if mean_norm == True:
+            temp_mean = feature[:,i].mean()
+        else:
+            temp_mean = 0
+        norm[:] = (feature[:] - temp_mean) / (feature.max() - feature.min())
+        params.append(np.asarray([temp_mean,feature[:,i].min(),feature[:,i].max()]))
+        
+    else:
+        raise ValueError("Feature array must be either 1D or 2D numpy array.")
+        
+    
+    if return_params == True:
+        return norm, params
+    else:
+        return norm
+    
+def rescale(norm, params):
+    """
+    Funcition to re-scale the normalised features using the original parameters as used
+    for mean normalisation itself.
+    
+    Inputs
+    ------------
+    norm (numpy array) - normalised feature vectors.
+    params (list of numpy arrays) - list of the parameters used for mean normalisation
+                        (ie. mean, min and max).
+                        
+    Returns
+    ------------
+    scaled (numpy array) - the recovered feature vectors, should be identical to original.
+    
+    """
+    scaled = np.zeros_like(norm)
+    
+    for i in range(len(params)):
+        if len(params) == 1:
+            scaled[:] = norm[:] * (params[i][2] - params[i][1]) + params[i][0]
+        else:
+            scaled[:,i] = norm[:,i] * (params[i][2] - params[i][1]) + params[i][0]
+    
+    return scaled
+
+def get_masks(label_array, values = None, return_list = False):
     """
     Creates a list of masks from a label array passed to it.
 
@@ -31,19 +262,79 @@ def get_masks(label_array, values = None):
     
     if values == None:
         values = np.unique(label_array)
+        a = True if True in np.isnan(np.array(values)) else False
+        if a == True:
+            values = [x for x in values if str(x) != 'nan']
+        else:
+            pass
+    elif isinstance(values, int) == True:
+        values = [values]
     else:
         pass
     
-    masks = []
+    masks = np.empty((label_array.shape[0], label_array.shape[1], len(values)))
+    masks[:] = np.nan
     
-    for label in values:
-        temp_mask = np.zeros(label_array.shape)
-        temp_mask[label_array == label] = 1
-        masks.append(temp_mask)
+    for i in range(len(values)):
+        temp_mask = masks[:,:,i]
+        temp_mask[label_array == values[i]] = 1
         
-    return masks
+    if len(values) == 1:
+        masks = masks[:,:,0]
         
+    if return_list == True:
+        return stack2list(masks)
+    else:  
+        return masks
         
+def remove_small_clusters(array, min_size = 10, labels = False):
+    """
+    Wrapper for the skimage function of the same name, making it easier to apply
+    to QEMSCAN datasets.
+
+    Parameters
+    ----------
+    array : 2D or 3D ndarray
+        Arrays to operate on - removes small clusters < min_size
+    min_size : int, optional
+        Minimum area of clusters to be kept in terms of pixels. The default is 
+        10.
+    labels : bool, optional
+        If ndarray passed is a label map, pass labels = True. The default is 
+        False.
+
+    Returns
+    -------
+    corr_masks : 3D stack of ndarrays
+        Phase masks with the small clusters removed as given by parameters
+        passed.
+
+    """
+    
+    if len(array.shape) == 2:
+        if labels == False:
+            n=1
+        else:
+            array = get_masks(array)
+            n = array.shape[2]
+    elif len(array.shape) == 3:
+        n = array.shape[2]
+    else:
+        raise ValueError("Array must be 2D or 3D numpy array.")
+        
+    corr_masks = np.empty_like(array)
+    for i in range(n):
+        if n == 1:
+            corr_masks = np.nan_to_num(array)
+            corr_masks = morph.remove_small_objects(measure.label(corr_masks, connectivity = 2), min_size)
+        else:
+            corr_masks[:,:,i] = np.nan_to_num(array[:,:,i])
+            corr_masks[:,:,i] = morph.remove_small_objects(measure.label(corr_masks[:,:,i]), min_size)
+
+    corr_masks[corr_masks != 0] = 1
+    corr_masks[corr_masks == 0] = np.nan
+    
+    return corr_masks
 
 def build_conc_map(data, shape=None):
     """
@@ -51,14 +342,19 @@ def build_conc_map(data, shape=None):
     
     Input
     -----------
-    data (pd dataframe) - pandas dataframe to be transformed to numpy data matrix.
-    shape (list) - (optional) desired shape of the resulting array; if not given
-                        one will be generated using the data and shape of dataframe.
+    data (pd dataframe)     
+        pandas dataframe to be transformed to numpy data matrix.
+    shape (list) (optional) 
+        desired shape of the resulting array; if not given
+        one will be generated using the data and shape of dataframe.
                         
     Return
     -----------
-    conc_map (3D numpy array) - the resulting data matrix of shape either given or
-                        calculated.
+    conc_map (3D numpy array) 
+        the resulting data matrix of shape either given or
+        calculated.
+    data_mask (2D numpy array) 
+        mask showing where data exists in conc_map (binary mask)
     """
     
     if isinstance(data, pd.DataFrame):
@@ -67,14 +363,16 @@ def build_conc_map(data, shape=None):
         raise ValueError("Data is not pandas dataframe.")
     
     if shape == None:
-        x_max = data['X'].max() + 1
-        y_max = data['Y'].max() + 1
+        x_max = data['X'].max()
+        y_max = data['Y'].max()
         n_features = len(data.columns) - 2 #need to substract x,y
         shape = [x_max, y_max, n_features]
     else:
         pass
     
     conc_map = np.zeros(shape)
+    conc_map.fill(np.nan)
+    data_mask = np.zeros((shape[0], shape[1]))
     k = 1
     length = len(data)
     
@@ -82,6 +380,7 @@ def build_conc_map(data, shape=None):
         x = data.loc[i, 'X']
         y = data.loc[i, 'Y']
         conc_map[x,y] = data.iloc[i].to_numpy()
+        data_mask[x,y] += 1
 
         if int((i/length)*10) == k:
             print(k*10)
@@ -90,82 +389,95 @@ def build_conc_map(data, shape=None):
             pass
     print(100)
     
-    return conc_map
+    return conc_map, data_mask
 
 
-
-def flatten_3d(array, desired_shape = None):
+def get_img(values, mask):
     """
-    Function to flatten 3d arrays into 2d to be used for further analyses.
+    Function to transform cluster or decomposition results into a displayable image.
+    It adds 'nan' to all pixels where no data exists.
+
+    Parameters
+    ----------
+    values : 1D ndarray
+        List of values to be transformed into 2D ndarray.
+    mask : 2D ndarray (bianry mask)
+        Mask showing location of values in dataset.
+
+    Returns
+    -------
+    new_array : 2D ndarray
+        Transformed image showing the values passed in their respective locations.
+
+    """    
+    new_array = np.zeros_like(mask)
+    new_array[:] = np.nan
+
+    np.place(new_array, mask.astype('bool'), values)
     
-    Input
-    ---------------
-    array (3D numpy array: [n1, n2, n3]) - array to be flattened.
-    desired_shape (2 element list/array) - shape of new array, if not given it will
-                                            be [n1*n2, n3].
-    
-    Return
-    ---------------
-    new_arr (2D numpy array of desired shape) - new array.
-    shape (3 element list/array) - original shape of the array passed to the function
+    return new_array
+
+def Maps2PDF(maps, map_labels = None, file_name = None, show = False):
     """
-    
-    shape = array.shape
-    if len(shape) == 3:
-        pass
+    Fucntion to plot concentration maps and automatically save them to PDF. Each page in the
+    resulting document contains an concentration map for a specific element.
+
+    Parameters
+    ----------
+    maps : list of ndarray or ndarray stack
+        Intensity maps to be plotted and saved to PDF.
+    map_labels : str, optional
+        Labels to be generated for each plot; order must be identical to that of
+        intensity maps passed. The default is None.
+    file_name : str, optional
+        Desired name to be given to resulting PDF. The default is None.
+    show : bool, optional
+        Set to True if plots are to be shown as well as saved as PDF. The default 
+        is False.
+
+    Returns
+    -------
+    None.
+
+    """
+    if isinstance(maps, list) == True:
+        N = len(maps)
+        maps = stack2list(maps)
+    elif len(maps.shape) == 2:
+        N=1
+    elif len(maps.shape) == 3:
+        N = maps.shape[2]
     else:
-        raise ValueError("Input array needs to have 3 dimensions.")
+        raise ValueError("Map matrix should be eithera list or 2D map array or collection of maps in a 3D array.")
     
-    if desired_shape == None:
-        desired_shape = [shape[0]*shape[1], shape[2]]
-    else:
-        pass
-    
-    new_arr = array.transpose()
-    new_arr = new_arr.reshape(desired_shape[1], desired_shape[0])
-    new_arr = new_arr.transpose()
-    
-    del array, desired_shape
-    
-    return new_arr, shape
-
-
-def reshape_2d_to_3d(array, desired_shape = None):
-    """
-    Function to reshape 2d arrays into 3d as a post-processing step eg. after PCA/NMF.
-    
-    Input
-    ---------------
-    array (2D numpy array: [n1, n2]) - array to be flattened.
-    desired_shape (3 element list/array) - shape of new array, if not given it will
-                                            be approximately [sqrt(n1),sqrt(n1), n2].
-    
-    Return
-    ---------------
-    new_arr (3D numpy array of desired shape) - new array.
-    shape (2 element list/array) - original shape of the array passed to the function
-    """
-
-    
-    shape = array.shape
-    if len(shape) == 2:
-        pass
-    else:
-        raise ValueError("Input array needs to have 2 dimensions only.")
-    
-    if desired_shape == None:
-        shape_sqrt = int(np.sqrt(shape[0]))
-        desired_shape = [shape_sqrt, shape_sqrt + (shape[0]%shape_sqrt), shape[1]]
+    if map_labels == None:
+        map_labels = np.linspace(1, N, N)
     else:
         pass
     
-    new_arr = array.transpose()
-    new_arr = new_arr.reshape(desired_shape[2], desired_shape[1], desired_shape[0])
-    new_arr = new_arr.transpose()
+    if file_name == None:
+        file_name = "map"
+    else:
+        pass
     
-    return new_arr, shape
+    pdf = matplotlib.backends.backend_pdf.PdfPages(str(file_name)+".pdf")
 
-def plot_cluster(labels, centers, plot_return = False, elements = None, shape = None):
+    for i in range(len(map_labels)):
+        fig, ax = plt.subplots(1,1, figsize = (12,12))
+        img = ax.imshow(maps[:,:,i], interpolation = "none")
+        fig.colorbar(img, ax = ax,fraction=0.02, pad=0.03)
+        ax.set_title(str(map_labels[i]) + " map")
+        pdf.savefig( fig , dpi = 500)
+        if show == False:
+            plt.close()
+        else:
+            pass
+
+    pdf.close()
+    
+    return None
+
+def plot_cluster(labels, centers, plot_return = False, elements = None, shape = None, label_names = None):
     """
     Function to plot the results of the clustering function. It may be called directly or
     through the clustering function itself.
@@ -200,9 +512,23 @@ def plot_cluster(labels, centers, plot_return = False, elements = None, shape = 
         pass
     else:
         raise ValueError("Label array needs to have 1 or 2 dimensions.")
+        
+    
     
     fig, ax = plt.subplots(1,1, figsize = (12,12))
-    ax.imshow(labels)
+    img = ax.imshow(labels, interpolation = "none")
+    
+    values = np.unique(labels.ravel())
+    if label_names == None:
+        label_names = values
+    else:
+        label_names.append("unclassified")
+        
+    colors = [ img.cmap(img.norm(value)) for value in values]
+    
+    #create legend for cluster map 
+    patches = [ mpatches.Patch(color=colors[i], label="{l}".format(l=label_names[i]) ) for i in range(len(values)) ]
+    ax.legend(handles=patches, bbox_to_anchor=(1.01, 1), loc=2, borderaxespad=0. )
     fig.tight_layout()
     
     if elements == None:
@@ -210,9 +536,15 @@ def plot_cluster(labels, centers, plot_return = False, elements = None, shape = 
     else:
         pass
     
-    fig2, ax2 = plt.subplots(int(len(centers)/2), 2, figsize = (12,12))
+    fig2 = plt.figure(figsize = (12,12))
+    ax2 = [0*i for i in range(len(centers))]
+    nrows = int(len(centers)/2) + 1
+    ncols = 2
+    
     for i in range(len(centers)):
-        ax2[int(i/2)][i%2].bar(range(len(elements)), centers[i], width = 0.5, tick_label = elements)
+        ax2[i] = fig2.add_subplot(nrows, ncols, i+1)
+        ax2[i].bar(range(len(elements)), centers[i], width = 0.5, tick_label = elements)
+        ax2[i].set_title("Cluster means for label: " + str(label_names[i]))
     fig2.tight_layout()
     
     if plot_return == True:
@@ -220,7 +552,7 @@ def plot_cluster(labels, centers, plot_return = False, elements = None, shape = 
     else:
         return None
     
-def plot_decomp(scores, comps, plot_return = False, elements = None, shape = None):
+def plot_decomp(scores, comps, plot_return = False, elements = None, mask = None):
     """
     Function to plot the results of the decomposition function. It may be called directly or
     through the clustering function itself.
@@ -247,11 +579,10 @@ def plot_decomp(scores, comps, plot_return = False, elements = None, shape = Non
     """
     
     if len(scores.shape) == 2:
-        if shape == None:
-            shape_sqrt = int(np.sqrt(len(scores)))
-            scores = reshape_2d_to_3d(scores, [shape_sqrt, shape_sqrt + (len(scores)%shape_sqrt), len(comps)])
+        if mask != None:
+            scores = get_img(scores, mask)
         else:
-            scores = scores.reshape(shape)
+            raise ValueError("If scores passed are 2D array, mask object is required.")
     elif len(scores.shape) == 3:
         pass
     else:
@@ -265,7 +596,8 @@ def plot_decomp(scores, comps, plot_return = False, elements = None, shape = Non
         pass
 
     for i in range(len(comps)):
-        ax[i][0].imshow(scores[:,:,i])
+        img = ax[i][0].imshow(scores[:,:,i], interpolation = "none")
+        fig.colorbar(img, ax = ax[i][0],fraction=0.02, pad=0.03)
         ax[i][1].bar(range(len(elements)), comps[i], width = 0.5, tick_label = elements)
         ax[i][1].plot([-0.5, len(elements)-0.5], [0, 0], 'k-')
 
@@ -277,7 +609,7 @@ def plot_decomp(scores, comps, plot_return = False, elements = None, shape = Non
         return None
 
     
-def cluster(data, n_clusters = 2, method = "k_means", shape = None,
+def cluster(data, n_clusters = 2, method = "gmm", data_mask = None,
             plot = False,plot_return = False, elements = None,
            df_shape = None):
     """
@@ -289,8 +621,7 @@ def cluster(data, n_clusters = 2, method = "k_means", shape = None,
     data (either 2D or 3D numpy array) - the dataset to perform clustering on.
     n_clusters (int) - number of clusters to find, default is 2.
     method (str) - clustering algorithm to be used ["k_means", "gmm"]; default is k_means.
-    shape (list) - shape of the output label array if data is a 2D array. Default is
-                    approximately [sqrt(n1), sqrt(n1)].
+    data_mask  - 
     plot (bool) - Make True if results are to be plotted; default is false.
     plot_return (bool) - optional, if plot=true, make True to return fig and ax objects, default is false.
     elements (list/array) - optional, used when plotting results only, default is None.
@@ -306,48 +637,40 @@ def cluster(data, n_clusters = 2, method = "k_means", shape = None,
     """
         
     if isinstance(data, pd.DataFrame):
-        data = build_conc_map(data, df_shape)
+        data, data_mask = build_conc_map(data, df_shape)
     else:
         pass
     
     if len(data.shape) == 3:
-        array, shape = flatten_3d(data)
+        #only keep non 'nan' entries
+        array = data[data_mask.astype('bool')]
     elif len(data.shape) == 2:
+        #assume it's in the right form
         array = data
-        if shape == None:
-            shape_sqrt = int(np.sqrt(data.shape[0]))
-            shape = [shape_sqrt, shape_sqrt + (data.shape[0]%shape_sqrt)]
-            del shape_sqrt
-        else:
-            pass
     else:
-        raise ValueError("Input array needs to have 2 or 3 dimensions.")
-            
+        raise ValueError("Input array needs to have 2 or 3 dimensions or be Pandas dataframe.")
+    
+    array, params = feature_normalisation(array, return_params = True)
+    
     start = time.time()
     
-    if method.lower() == "k_means":
-        from sklearn.cluster import KMeans
-        #perform k_means clustering
-        kmeans = KMeans(n_clusters=n_clusters, init = 'k-means++').fit(array)
-        labels = kmeans.labels_.reshape(shape[1],shape[0]).copy()
-        labels = labels.transpose()
-        centers = kmeans.cluster_centers_.copy()
-        del array, shape, kmeans
         
-    elif method.lower() == "gmm":
+    if method.lower() == "gmm":
         from sklearn.mixture import GaussianMixture
         #perform GMM
         gmm = GaussianMixture(n_clusters)
-        labels = gmm.fit_predict(array).reshape(shape[1],shape[0]).copy()
-        labels = labels.transpose()
-        centers = gmm.means_.copy()
-        del array, shape, gmm
+        labels = gmm.fit_predict(array) + 1
+        centers = gmm.means_
         
     else:
         raise ValueError("Method " + str(method) + " is not recognised.")
         
     process_time = time.time() - start    
-    print("Processing time (s): " + str(process_time))
+    print("Clustering processing time (s): " + str(process_time))
+    
+    centers = rescale(centers, params)
+    #convert to 2D image
+    labels = get_img(labels, data_mask)
     
     if plot == True:
         fig, ax = plot_cluster(labels, centers, plot_return = True ,elements=elements)
@@ -360,9 +683,9 @@ def cluster(data, n_clusters = 2, method = "k_means", shape = None,
     
     return labels, centers
 
-def decompose(data, n_components = 2, method = "pca", tol = 0.05, shape = None;
+def decompose(data, n_components = 2, method = "pca", tol = 0.05, 
               plot = False, plot_return = False, elements = None, 
-             df_shape = None):
+             data_mask = None, df_shape = None):
     """
     Function to perform the selected decomposition algorithm on the data passed. Ideal for use in
     the initial data exploration steps.
@@ -376,6 +699,7 @@ def decompose(data, n_components = 2, method = "pca", tol = 0.05, shape = None;
     plot (bool) - Make True if results are to be plotted; default is false.
     plot_return (bool) - optional, if plot=true, make True to return fig and ax objects; default is false.
     elements (list/array) - optional, used when plotting results only; default is None.
+    data_mask - 
     
     Return
     ------------
@@ -389,60 +713,59 @@ def decompose(data, n_components = 2, method = "pca", tol = 0.05, shape = None;
     from sklearn import decomposition
     
     if isinstance(data, pd.DataFrame):
-        data = build_conc_map(data, df_shape)
+        data, data_mask = build_conc_map(data, df_shape)
     else:
         pass
     
     if len(data.shape) == 3:
-        array, shape = flatten_3d(data)
+        array = data[data_mask.astype('bool')]
     elif len(data.shape) == 2:
+        #assume it's in the right form
         array = data
-        if shape == None:
-            shape_sqrt = int(np.sqrt(data.shape[0]))
-            shape = [shape_sqrt, shape_sqrt + (data.shape[0]%shape_sqrt)]
-            del shape_sqrt
-        else:
-            pass
     else:
-        raise ValueError("Input array needs to have 2 or 3 dimensions.")
-        
+        raise ValueError("Input array needs to have 2 or 3 dimensions or be Pandas dataframe.")
+    
+      
+    
     start = time.time()
     
     if method.lower() == "pca":
+        array, params = feature_normalisation(array, return_params = True)
         #perform PCA decomposition
         pca = decomposition.PCA(n_components = n_components)
-        scores = reshape_2d_to_3d(pca.fit_transform(array), [shape[0], shape[1], n_components])[0].copy()
-        components = pca.components_.copy()
-        
-        del array, shape, pca
+        scores = pca.fit_transform(array)
+        components = pca.components_
         
     elif method.lower() == "nmf":
+        array, params = feature_normalisation(array, return_params = True, mean_norm = False)
         #perform NMF decomposition
         nmf = decomposition.NMF(n_components = n_components, tol = tol)
-        scores = reshape_2d_to_3d(nmf.fit_transform(array), [shape[0], shape[1], n_components])[0].copy()
-        components = nmf.components_.copy()
-        
-        del array, shape, nmf
+        scores = nmf.fit_transform(array)
+        components = nmf.components_
         
     else:
         raise ValueError("Method " + str(method) + " is not recognised.")
     
     process_time = time.time() - start    
-    print("Processing time (s): " + str(process_time))
+    print("Decomposition processing time (s): " + str(process_time))
+    
+    components = rescale(components, params)    
+    scores_2d = np.zeros((data_mask.shape[0], data_mask.shape[1], n_components))
+    for i in range(n_components):
+        scores_2d[:,:,i] = get_img(scores[:,i], data_mask)
     
     if plot == True:
-        fig, ax = plot_decomp(scores, components, plot_return = True, elements=elements)
+        fig, ax = plot_decomp(scores_2d, components, plot_return = True, elements=elements)
         if plot_return == True:
-            return scores, components, fig, ax
+            return scores_2d, components, fig, ax
         else:
             pass
     else:
         pass
     
-    return scores, components
+    return scores_2d, components
 
-
-def complete_phaseMap(values, phases, cmaps):
+def complete_phaseMap(values, phases, cmaps = None):
     """
     Create a complete phase map of the results of previous analyses. Generates
     a large plot of all phases put on the same array as well as a collection of
@@ -451,7 +774,7 @@ def complete_phaseMap(values, phases, cmaps):
 
     Parameters
     ----------
-    values : list of 2D numpy arrays
+    values : 3D nuumpy array (stacked 2D images)
         Values to be plotted on which the colour map intensity depends. It can
         be a simple binary phase mask (making all pixels of that phase the same
         colour) or sets of pca/nmf scores to show some compoisiton variation - or
@@ -475,16 +798,25 @@ def complete_phaseMap(values, phases, cmaps):
         plots generated - same as figure objects. Can be used to alter the axes in plots
         at a later date.
     """
+    
+    if isinstance(values, list):
+        values = list2stack(values)
+    else:
+        pass
+    
+    values = np.nan_to_num(values)
+    
     fig, ax = plt.subplots(1,1,figsize=(12,12))
     
     fig2 = plt.figure(figsize = (12,12))
-    ax2 = [0*i for i in range(len(values))]
+    ax2 = [0*i for i in range(len(phases))]
     
-    nrows = int(len(values)/2)+1
+    nrows = int(len(phases)/2)+1
     ncols = 2
+    colors = []
     
-    for i in range(len(values)):
-        temp_map = values[i]
+    for i in range(len(phases)):
+        temp_map = values[:,:,i]
         
         if len(np.unique(temp_map)) <= 2:
             temp_vmin = temp_map.min()
@@ -497,14 +829,21 @@ def complete_phaseMap(values, phases, cmaps):
         temp_alpha[temp_map != 0] = 1
         
         ax.imshow(temp_map, cmap = cmaps[i], alpha = temp_alpha,
-                 vmin = temp_vmin, vmax = temp_vmax)
+                 vmin = temp_vmin, vmax = temp_vmax, interpolation = "none")
         
         ax2[i] = fig2.add_subplot(nrows, ncols, i+1)
         separate = ax2[i].imshow(temp_map, cmap = cmaps[i],
-                 vmin = temp_vmin, vmax = temp_vmax)
+                 vmin = temp_vmin, vmax = temp_vmax, interpolation = "none")
+        
+        colors.append(separate.cmap(separate.norm(temp_vmax)))
+        
         fig2.colorbar(separate, ax = ax2[i],fraction=0.03, pad=0.04)
         ax2[i].title.set_text(phases[i])
     
+    
+    # create legend for main phase map
+    patches = [ mpatches.Patch(color=colors[i], label="{l}".format(l=phases[i]) ) for i in range(len(phases)) ]
+    ax.legend(handles=patches, bbox_to_anchor=(1.01, 1), loc=2, borderaxespad=0. )
     
     fig.tight_layout()
     fig2.tight_layout()
