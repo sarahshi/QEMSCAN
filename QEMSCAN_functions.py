@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 @author: norbert
@@ -14,21 +13,57 @@ import skimage.morphology as morph
 import skimage.measure as measure
 import skimage.filters as filters
 
+def split_at(string, char, n):
+    """
+    Splits string into two at the nth occurence of the character specified.
+    
+    Input
+    ------------------------------------
+    string - string to be split into two
+    char - character to split at
+    n - the occurrence of character at which splitting should occur.
+    
+    Returns
+    -------------------------------------
+    The two ends of the string split at the specified position.
+    """
+    words = string.split(char)
+    return char.join(words[:n]), char.join(words[n:])
+
+
+def get_img(values, mask):
+    """
+    Function to transform cluster or decomposition results into a displayable image.
+    It adds 'nan' to all pixels where no data exists.
+    Parameters
+    ----------
+    values : 1D ndarray
+        List of values to be transformed into 2D ndarray.
+    mask : 2D ndarray (bianry mask)
+        Mask showing location of values in dataset.
+    Returns
+    -------
+    new_array : 2D ndarray
+        Transformed image showing the values passed in their respective locations.
+    """    
+    new_array = np.zeros_like(mask)
+    new_array[:] = np.nan
+
+    np.place(new_array, mask.astype('bool'), values)
+    
+    return new_array
 
 def list2stack(array_list):
     """
     Function to stack lists of 2D numpy arrays to a 3D stack.
-
     Parameters
     ----------
     array_list : list of 2D ndarray
         list of 2D ndarray objects to stack into 3D ndarray
-
     Returns
     -------
     stack : 3D ndarray
         Stacked ndarray object.
-
     """
     
     if isinstance(array_list, list) == False:
@@ -54,17 +89,14 @@ def list2stack(array_list):
 def stack2list(stack):
     """
     Opposite/reverse of list2stack function.
-
     Parameters
     ----------
     stack : 3D ndarray
         stacked array of 2D maps to be broken up into list of 2D ndarray.
-
     Returns
     -------
     array_list : list of 2D ndarray
         broken up list of 2D ndarray maps.
-
     """
     
     if len(stack.shape) != 3:
@@ -76,12 +108,12 @@ def stack2list(stack):
     
     return array_list
 
+
 def gauss_check(item):
     """
     Checks input parameters of Gaussian filter function for appropriate
     types. Allows for the handling of multipl types of parameters eg. lists
     and ndarray objects both.
-
     Parameters
     ----------
     item : ndarray or list of ndarrays
@@ -91,7 +123,6 @@ def gauss_check(item):
     -------
     item_list : list of 2D ndarray objects
         list of 2D ndarray objects to be used for gaussian filter separately.
-
     """
     
     if isinstance(item, list) == True:
@@ -115,7 +146,6 @@ def gaussian_filter(conc, mask, std = 5, list_return = False):
     This implementation takes into account the different phases present and limits
     the smoothing to each phase only - avoiding the creation of artifical 'mixels'
     upon smoothing. Useful for noisy datasets, but beware of drawbacks/limitations.
-
     Parameters
     ----------
     conc : 2/3D ndarray or list of 2D ndarray
@@ -128,12 +158,10 @@ def gaussian_filter(conc, mask, std = 5, list_return = False):
     list_return : bool, optional
         If True, filtered maps are returned as a list. The default is False so
         result is returned as a 3D stack of ndarray.
-
     Returns
     -------
     filtered_maps: 3D ndarray stack or list of 2D ndarray
         Result of the smoothing operations.
-
     """
     
     
@@ -180,9 +208,7 @@ def feature_normalisation(feature, return_params = False, mean_norm = True):
     params (list of numpy arrays) - only returned if set to True above; list of parameters
                             used for the mean normalisation as derived from the features
                             (ie. mean, min and max).
-    
     """
-    
     
     params = []
     
@@ -201,11 +227,13 @@ def feature_normalisation(feature, return_params = False, mean_norm = True):
     
     elif len(feature.shape) == 1:
         if mean_norm == True:
-            temp_mean = feature[:,i].mean()
+            temp_mean = feature[:].mean()
+        elif mean_norm == False:
+                temp_mean = 0
         else:
-            temp_mean = 0
+            raise ValueError("Mean_norm must be boolean")
         norm[:] = (feature[:] - temp_mean) / (feature.max() - feature.min())
-        params.append(np.asarray([temp_mean,feature[:,i].min(),feature[:,i].max()]))
+        params.append(np.asarray([temp_mean,feature[:].min(),feature[:].max()]))
         
     else:
         raise ValueError("Feature array must be either 1D or 2D numpy array.")
@@ -245,19 +273,16 @@ def rescale(norm, params):
 def get_masks(label_array, values = None, return_list = False):
     """
     Creates a list of masks from a label array passed to it.
-
     Parameters
     ----------
     label_array : 2D numpy array
         Array containing phase labels assigned to each pixel.
     values : list of ints/labels, optional
         The labels to be masked from the label array. The default is None.
-
     Returns
     -------
     masks : list of 2D numpy arrays
         Colection of phase masks generated.
-
     """
     
     if values == None:
@@ -291,7 +316,6 @@ def remove_small_clusters(array, min_size = 10, labels = False):
     """
     Wrapper for the skimage function of the same name, making it easier to apply
     to QEMSCAN datasets.
-
     Parameters
     ----------
     array : 2D or 3D ndarray
@@ -302,13 +326,11 @@ def remove_small_clusters(array, min_size = 10, labels = False):
     labels : bool, optional
         If ndarray passed is a label map, pass labels = True. The default is 
         False.
-
     Returns
     -------
     corr_masks : 3D stack of ndarrays
         Phase masks with the small clusters removed as given by parameters
         passed.
-
     """
     
     if len(array.shape) == 2:
@@ -336,7 +358,8 @@ def remove_small_clusters(array, min_size = 10, labels = False):
     
     return corr_masks
 
-def build_conc_map(data, shape=None):
+
+def build_conc_map(data, shape=None,):
     """
     Build 3D numpy conc_map from pandas dataframe.
     
@@ -356,15 +379,15 @@ def build_conc_map(data, shape=None):
     data_mask (2D numpy array) 
         mask showing where data exists in conc_map (binary mask)
     """
-    
+
     if isinstance(data, pd.DataFrame):
         pass
     else:
         raise ValueError("Data is not pandas dataframe.")
     
     if shape == None:
-        x_max = data['X'].max()
-        y_max = data['Y'].max()
+        x_max = data['X'].max() + 1
+        y_max = data['Y'].max() + 1
         n_features = len(data.columns) - 2 #need to substract x,y
         shape = [x_max, y_max, n_features]
     else:
@@ -376,52 +399,105 @@ def build_conc_map(data, shape=None):
     k = 1
     length = len(data)
     
+    print("Starting to build data-cube.")
     for i in range(length):
         x = data.loc[i, 'X']
         y = data.loc[i, 'Y']
-        conc_map[x,y] = data.iloc[i].to_numpy()
+        conc_map[x,y] = data.iloc[i,2:].to_numpy()
         data_mask[x,y] += 1
 
         if int((i/length)*10) == k:
-            print(k*10)
+            print("Progress: " + str(k*10) + "%")
             k += 1
         else:
             pass
-    print(100)
-    
+    print("Progress: " + str(100)+ "%")
+
     return conc_map, data_mask
 
 
-def get_img(values, mask):
+
+def plot_intensity_maps(conc_data, elements, grid=(1,1),figsize = None, show_axis = "off", fontsize = 12, cmaps = None):
     """
-    Function to transform cluster or decomposition results into a displayable image.
-    It adds 'nan' to all pixels where no data exists.
-
-    Parameters
-    ----------
-    values : 1D ndarray
-        List of values to be transformed into 2D ndarray.
-    mask : 2D ndarray (bianry mask)
-        Mask showing location of values in dataset.
-
+    Fucntion to plot intensity maps in and easy and intuitive manner, but also keeping
+    flexibility at heart.
+    Inputs
+    -----------------
+    conc_data (ndarray or list)
+        Intensity map object - can be 3D ndarray interpreted as a stack of maps.
+    elements (list of STR)
+        These serve as the titles for each subplot showing what element each map
+        belongs to.
+    grid (tuple of 2 INTs)
+        Sets the grid dimensions to be plotted, default is (1,1).
+    figsize (tuple of 2 INTs)
+        Sets the figure size as according to standard matplotlib notation.
+    show_axis ("on"/"off")
+        Sets whether the axis and its labels are shown.
+    fontsize (INT)
+        Size of the element labels as according to standard matplotlib notation.
+    cmaps (list)
+        List of colormaps to be used for plotting, default contains 16 of these
+        already - this sets the maximum maps to be plotted using the default. Note, this
+        has to be the same length as the number of plots or longer.
     Returns
-    -------
-    new_array : 2D ndarray
-        Transformed image showing the values passed in their respective locations.
+    -----------------
+    fig 
+        matplotlib figure object for the entire canvas.
+    ax (list)
+        list of matplotlib axis objects for each subplot.
+    """
+    if isinstance(conc_data, np.ndarray) == True:
+        pass
+    elif isinstance(conc_data, list) == True:
+        conc_data = list2stack(conc_data)
+    else:
+        raise ValueError("Concentration data needs to be either list or ndarray.")
 
-    """    
-    new_array = np.zeros_like(mask)
-    new_array[:] = np.nan
+    if figsize is None:
+        figsize = (4*grid[1],3*grid[0])
+    else:
+        pass
 
-    np.place(new_array, mask.astype('bool'), values)
-    
-    return new_array
+    if len(conc_data.shape) == 3:
+        n = conc_data.shape[2]
+    else:
+        n = 1
+        elements = [elements]
+
+    if cmaps is None:
+        cmaps = ['Greys_r', 'Purples_r', 'Blues_r', 'Greens_r', 'Oranges_r', 'Reds_r', 'YlOrBr_r', 'YlOrRd_r', 'Blues_r', 'YlOrBr_r', 'Greens_r', 'Reds_r', 'Purples_r', 'pink', 'bone', 'viridis']
+    else:
+        pass
+
+    fig = plt.figure(figsize=figsize)
+    ax = [0*i for i in range(n)]
+
+    for i in range(n):
+
+        if n == 1:
+            map = conc_data
+        else:
+            map = conc_data[:,:,i]
+
+        map = np.nan_to_num(map)
+        v_min = map.min()
+        v_max = map.max()
+
+        ax[i] = fig.add_subplot(grid[0], grid[1], i+1)
+        im = ax[i].imshow(map, cmap=cmaps[i], interpolation = "none", vmin = v_min, vmax = v_max)
+        ax[i].set_title(elements[i], fontsize=fontsize)
+        ax[i].axis(show_axis)
+        fig.colorbar(im, ax=ax[i], fraction=0.03, pad=0.04)
+
+    fig.tight_layout()
+
+    return fig, ax
 
 def Maps2PDF(maps, map_labels = None, file_name = None, show = False):
     """
     Fucntion to plot concentration maps and automatically save them to PDF. Each page in the
     resulting document contains an concentration map for a specific element.
-
     Parameters
     ----------
     maps : list of ndarray or ndarray stack
@@ -434,11 +510,9 @@ def Maps2PDF(maps, map_labels = None, file_name = None, show = False):
     show : bool, optional
         Set to True if plots are to be shown as well as saved as PDF. The default 
         is False.
-
     Returns
     -------
     None.
-
     """
     if isinstance(maps, list) == True:
         N = len(maps)
@@ -609,7 +683,7 @@ def plot_decomp(scores, comps, plot_return = False, elements = None, mask = None
         return None
 
     
-def cluster(data, n_clusters = 2, method = "gmm", data_mask = None,
+def cluster(data, n_clusters, method, data_mask = None,
             plot = False,plot_return = False, elements = None,
            df_shape = None):
     """
@@ -661,6 +735,20 @@ def cluster(data, n_clusters = 2, method = "gmm", data_mask = None,
         gmm = GaussianMixture(n_clusters)
         labels = gmm.fit_predict(array) + 1
         centers = gmm.means_
+
+    elif method.lower() == "k_means":
+        from sklearn.cluster import KMeans
+        #perform k_means clustering
+        kmeans = KMeans(n_clusters=n_clusters, init = 'k-means++').fit(array)
+        labels = kmeans.labels_
+        centers = kmeans.cluster_centers_
+
+    elif method.lower() == "b-gmm":
+        from sklearn.mixture import BayesianGaussianMixture
+        #perform b-gmm
+        bgm = BayesianGaussianMixture(n_components = n_clusters, covariance_type = 'full', init_params = 'kmeans', max_iter = 500, random_state=42)
+        labels = bgm.fit_predict(array)
+        centers = bgm.means_
         
     else:
         raise ValueError("Method " + str(method) + " is not recognised.")
@@ -684,8 +772,8 @@ def cluster(data, n_clusters = 2, method = "gmm", data_mask = None,
     return labels, centers
 
 def decompose(data, n_components = 2, method = "pca", tol = 0.05, 
-              plot = False, plot_return = False, elements = None, 
-             data_mask = None, df_shape = None):
+            plot = False, plot_return = False, elements = None, 
+            data_mask = None, df_shape = None):
     """
     Function to perform the selected decomposition algorithm on the data passed. Ideal for use in
     the initial data exploration steps.
@@ -724,8 +812,6 @@ def decompose(data, n_components = 2, method = "pca", tol = 0.05,
         array = data
     else:
         raise ValueError("Input array needs to have 2 or 3 dimensions or be Pandas dataframe.")
-    
-      
     
     start = time.time()
     
@@ -771,7 +857,6 @@ def complete_phaseMap(values, phases, cmaps = None):
     a large plot of all phases put on the same array as well as a collection of
     plots showing each phase/mask passed to the function separately with their
     respective colorbars.
-
     Parameters
     ----------
     values : 3D nuumpy array (stacked 2D images)
